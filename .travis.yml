@@ -1,0 +1,10 @@
+---
+cache: 'bundler'
+jdk:
+  - 'oraclejdk8'
+language: 'ruby'
+rvm:
+  - 'jruby-1.7.25'
+script:
+  - 'bundle exec rspec spec'
+sudo: false
