@@ -2,54 +2,46 @@
 
 require 'logstash/filters/base'
 require 'logstash/namespace'
-# New below
 require 'logstash/plugin_mixins/http_client'
 require 'logstash/json'
+require 'jruby/synchronized'
+require 'rufus-scheduler'
 
 class LogStash::Filters::Age < LogStash::Filters::Base
   include LogStash::PluginMixins::HttpClient
+  include JRuby::Synchronized
 
   config_name 'age'
 
   # Define the target field for the event age, in seconds.
   config :target, :default => '[@metadata][age]', :validate => :string
 
-  # Define the elasticsearch url to the cluster settings for max_age_secs 
+  # Define the elasticsearch url to the limit service
   config :url, :default => 'https://elasticsearch.main.top.elliemae.io/_cluster/settings?filter_path=persistent.cluster.metadata.optimizer.sleep_min_seconds', :validate => :string
 
-  # The max_age_secs is the number of seconds beyond which the expired_target will be set to true (default: 259200)
-  config :max_age_secs,:default => 0.01, :validate => :number
+  config :limit_path, :default => 'persistent.cluster.metadata.optimizer.sleep_min_seconds', :validate => :string
+
+  # The max_age_secs is the default number of seconds beyond which the expired_target will be set to true (when the limit service url not found or no result))
+  config :max_age_secs, :default => 259200, :validate => :number
 
   # The expired_target field is boolean when the event timestamp  is older than max_age_secs
   config :expired_target, :default => '[@metadata][expired]', :validate => :string
+
+  # The interval between calls to the limit service given by the url
+  config :interval, :default => "60s", :validate => :string
 
   # user and password come from the http client mixin
   # the password needs to be dereferenced using @password.value
 
   public
   def register
-    begin
+    @split_limit_path = limit_path.split(".")
+    @scheduler = Rufus::Scheduler.new
 
-#[2020-10-07T23:48:36,365][WARN ][logstash.filters.age     ][main] JSON parsing error {:message=>"undefined local variable or method `event' for #<LogStash::Filters::Age:0x572572e7>", :body=>"{\"persistent\":{\"cluster\":{\"metadata\":{\"optimizer\":{\"sleep_min_seconds\":\"10\"}}}}}"}
+    request_limit()
 
-      options = {auth: {user: @user, password: @password.value}}
-      code, response_headers, response_body = request_http(@url, options)
-
-    rescue => e
-      client_error = e
-    end
-
-    if client_error
-      @logger.error('error during HTTP request',
-                    :url => @url,
-                    :client_error => client_error.message)
-
-    elsif !code.between?(200, 299)
-      @logger.error('error during HTTP request',
-                    :url => @url, :code => code,
-                    :response => response_body)
-    else
-      process_response(response_body)
+    @scheduler.every @interval do
+      request_limit()
     end
   end
 
@@ -64,6 +56,7 @@ class LogStash::Filters::Age < LogStash::Filters::Base
 #
 # curl -u 'obs_ro:Password!234' https://elasticsearch.main.dev.top.rd.elliemae.io/_cluster/settings?filter_path=**.metadata
 # curl -u 'obs_ro:Password!234' https://elasticsearch.main.top.elliemae.io/_cluster/settings?filter_path=**.metadata
+# curl -u 'obs_ro:Password!234' https://elasticsearch.main.top.elliemae.io/_cluster/settings?filter_path=persistent.cluster.metadata.optimizer.sleep_min_seconds
 #{
 #  "persistent": {
 #    "cluster": {
@@ -108,16 +101,64 @@ class LogStash::Filters::Age < LogStash::Filters::Base
   end
 
   private
+  def request_limit
+    begin
+
+      options = {auth: {user: @user, password: @password.value}}
+      code, response_headers, response_body = request_http(@url, options)
+
+    rescue => e
+      client_error = e
+    end
+
+    if client_error
+      @logger.error('error during HTTP request',
+                    :url => @url,
+                    :client_error => client_error.message)
+
+    elsif !code.between?(200, 299)
+      @logger.error('error during HTTP request',
+                    :url => @url, :code => code,
+                    :response => response_body)
+    else
+      process_response(response_body)
+    end
+  end
+
   def request_http(url, options = {})
-    @logger.debug('age making request_http with arguments', :url => url)
+    @logger.info('age making request_http with arguments', :url => url)
     response = client.http("get", url, options)
     [response.code, response.headers, response.body]
   end
 
   def process_response(body)
     begin
-      parsed = LogStash::Json.load(body)
-      @ageresponse = parsed
+      #parsed = LogStash::Json.load(body)
+      parsed = LogStash::Json.load(body).to_hash
+
+      @split_limit_path.each do |field|
+          break if !parsed
+          parsed = parsed.dig(field)
+      end
+
+      if parsed
+          @ageresponse = parsed
+      else
+          @ageresponse = @max_age_secs
+      end
+
+#@ageresponse = parsed.dig("persistent", "cluster", "metadata", "optimizer", "sleep_min_seconds")
+#@ageresponse = parsed["persistent"]["cluster"]["metadata"]["optimizer"]["sleep_min_seconds"]
+#    "ageresponse" => {
+#        "persistent" => {
+#            "cluster" => {
+#                "metadata" => {
+#                    "optimizer" => {
+#                        "sleep_min_seconds" => "10"
+#                    }
+#                }
+#            }
+#        }
     rescue => e
         @logger.warn('JSON parsing error', :message => e.message, :body => body)
     end
