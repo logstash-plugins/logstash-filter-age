@@ -34,6 +34,8 @@ This enables important limit critieria to be changed on the fly and picked
 up and used in event filters; avoiding hard coded magic numbers and long
 redeployments of new logstash config changes.
 
+The historic approach is as follows.
+If the hard coded magic number bothers you too, then try the other configuration.
 [source,ruby]
 filter {
   age {}
@@ -43,6 +45,20 @@ filter {
   }
 }
 
+[source,ruby]
+filter {
+  age{
+    "url" => "https://elasticsearch.main.dev.top.rd.elliemae.io/_cluster/settings?filter_path=persistent.cluster.metadata.logstash.filter.age.limit_secs"
+    "limit_path" => "persistent.cluster.metadata.logstash.filter.age.limit_secs"
+    "interval" => "5m"
+    "expired_target" => "[@metadata][expired]"
+    "age_limit_target" => "[@metadata][age_limit]"
+  }
+
+  if [@metadata][expired] {
+    drop {}
+  }
+}
 
 [id="plugins-{type}s-{plugin}-options"]
 ==== Age Filter Configuration Options
