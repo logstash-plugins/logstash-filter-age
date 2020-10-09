@@ -26,6 +26,14 @@ This filter calculates the age of an event by subtracting the event timestamp
 from the current timestamp. This allows you to drop Logstash events that are
 older than some threshold.
 
+It also has the ability to perform a calculation if the event is older than
+a limit value. If so, set a boolean field with the result. The limit value
+can also be determined dynamically by age calling a limit service periodically.
+Using elasticsearch cluster setttings works great for this.
+This enables important limit critieria to be changed on the fly and picked
+up and used in event filters; avoiding hard coded magic numbers and long
+redeployments of new logstash config changes.
+
 [source,ruby]
 filter {
   age {}
