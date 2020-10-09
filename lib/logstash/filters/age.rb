@@ -17,14 +17,14 @@ class LogStash::Filters::Age < LogStash::Filters::Base
   config :target, :default => '[@metadata][age]', :validate => :string
 
   # Define the elasticsearch url to the limit service
-  config :url, :default => 'https://elasticsearch.main.top.elliemae.io/_cluster/settings?filter_path=persistent.cluster.metadata.optimizer.sleep_min_seconds', :validate => :string
+  config :url, :default => 'https://elasticsearch.main.top.elliemae.io/_cluster/settings?filter_path=persistent.cluster.metadata.logstash.filter.age.limit_secs', :validate => :string
 
-  config :limit_path, :default => 'persistent.cluster.metadata.optimizer.sleep_min_seconds', :validate => :string
+  config :limit_path, :default => 'persistent.cluster.metadata.logstash.filter.age.limit_secs', :validate => :string
 
   # The max_age_secs is the default number of seconds beyond which the expired_target will be set to true (when the limit service url not found or no result))
   config :max_age_secs, :default => 259200, :validate => :number
 
-  # The expired_target field is boolean when the event timestamp  is older than max_age_secs
+  # The expired_target field is boolean when the event timestamp  is older than age_limit
   config :expired_target, :default => '[@metadata][expired]', :validate => :string
 
   # The interval between calls to the limit service given by the url
@@ -54,47 +54,36 @@ class LogStash::Filters::Age < LogStash::Filters::Base
 # See: https://discuss.elastic.co/t/how-to-parse-json-values-from-http-poller-into-event-fields/136597
 # See: https://www.elastic.co/guide/en/logstash/current/multiple-input-output-plugins.html
 #
-# curl -u 'obs_ro:Password!234' https://elasticsearch.main.dev.top.rd.elliemae.io/_cluster/settings?filter_path=**.metadata
 # curl -u 'obs_ro:Password!234' https://elasticsearch.main.top.elliemae.io/_cluster/settings?filter_path=**.metadata
-# curl -u 'obs_ro:Password!234' https://elasticsearch.main.top.elliemae.io/_cluster/settings?filter_path=persistent.cluster.metadata.optimizer.sleep_min_seconds
+# curl -u 'obs_ro:Password!234' https://elasticsearch.main.dev.top.rd.elliemae.io/_cluster/settings?filter_path=persistent.cluster.metadata.logstash.filter.age.limit_secs
 #{
-#  "persistent": {
-#    "cluster": {
-#      "metadata": {
-#        "optimizer": {
-#          "index_creation_enable": "True",
-#          "shard_rebalance_enable": "True",
-#          "sleep_max_seconds": "30",
-#          "shard_rebalance_ratio": "93.5",
-#          "shard_rebalance_max_run_time_minutes": "480",
-#          "ok_unassigned_shards_when_red": "20",
-#          "sleep_min_seconds": "10",
-#          "start_time_utc": "06:00:05",
-#          "index_creation_max_run_time_minutes": "480",
-#          "status": ""
-#        },
-#        "unsafe-bootstrap": "true"
+#  "persistent" : {
+#    "cluster" : {
+#      "metadata" : {
+#        "logstash" : {
+#          "filter" : {
+#            "age" : {
+#              "limit_secs" : "10"
+#            }
+#          }
+#        }
 #      }
 #    }
 #  }
 #}
-#
-# curl -u 'obs_ro:Password!234' https://elasticsearch.main.top.elliemae.io/_cluster/settings?filter_path=**.metadata.optimizer.sleep_min_seconds
-#{"persistent":{"cluster":{"metadata":{"optimizer":{"sleep_min_seconds":"10"}}}}
-
   public
   def filter(event)
 
     delta = Time.now.to_f - event.timestamp.to_f
     event.set(@target, delta)
 
-    if delta > @max_age_secs
+    if delta > @age_limit
     	event.set(@expired_target, true)
     else
     	event.set(@expired_target, false)
     end
 
-    event.set("ageresponse", @ageresponse)
+    event.set("age_limit", @age_limit)
 
     # filter_matched should go in the last line of our successful code
     filter_matched(event)
@@ -123,9 +112,6 @@ class LogStash::Filters::Age < LogStash::Filters::Base
                     :url => @url, :code => code,
                     :response => response_body)
     else
-      @logger.info('age request response',
-                    :url => @url, :code => code,
-                    :response => response_body)
       process_response(response_body)
     end
   end
@@ -138,7 +124,6 @@ class LogStash::Filters::Age < LogStash::Filters::Base
 
   def process_response(body)
     begin
-      #parsed = LogStash::Json.load(body)
       parsed = LogStash::Json.load(body).to_hash
 
       @split_limit_path.each do |field|
@@ -147,23 +132,21 @@ class LogStash::Filters::Age < LogStash::Filters::Base
       end
 
       if parsed
-          @ageresponse = parsed
+          if parsed.is_a? Numeric
+              @age_limit = parsed.to_f
+              @logger.info('age response parsed numeric',
+                :age_limit => @age_limit, :parsed => parsed)
+          else
+              @age_limit = @max_age_secs.to_f
+              @logger.info('age response parsed non numeric',
+                :age_limit => @age_limit, :parsed => parsed)
+          end
       else
-          @ageresponse = @max_age_secs
+          @age_limit = @max_age_secs.to_f
+          @logger.info('age response parsed false (using max_age_secs)',
+            :age_limit => @age_limit, :parsed => parsed, :max_age_secs => @max_age_secs)
       end
 
-#@ageresponse = parsed.dig("persistent", "cluster", "metadata", "optimizer", "sleep_min_seconds")
-#@ageresponse = parsed["persistent"]["cluster"]["metadata"]["optimizer"]["sleep_min_seconds"]
-#    "ageresponse" => {
-#        "persistent" => {
-#            "cluster" => {
-#                "metadata" => {
-#                    "optimizer" => {
-#                        "sleep_min_seconds" => "10"
-#                    }
-#                }
-#            }
-#        }
     rescue => e
         @logger.warn('JSON parsing error', :message => e.message, :body => body)
     end
