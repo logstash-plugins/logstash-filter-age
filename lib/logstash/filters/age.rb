@@ -30,8 +30,8 @@ class LogStash::Filters::Age < LogStash::Filters::Base
   # The interval between calls to the limit service given by the url
   config :interval, :default => "60s", :validate => :string
 
-  # user and password come from the http client mixin
-  # the password needs to be dereferenced using @password.value
+  # user and password (and other options) come from the http client mixin
+  # Note that the password needs to be dereferenced using @password.value
 
   public
   def register
@@ -104,7 +104,9 @@ class LogStash::Filters::Age < LogStash::Filters::Base
   def request_limit
     begin
 
-      options = {auth: {user: @user, password: @password.value}}
+      # options = {auth: {user: @user, password: @password.value}}
+      options = {auth: {user: @user, password: @password.value}, request_timeout: @request_timeout, socket_timeout: @socket_timeout, connect_timeout: @connect_timeout, automatic_retries: @automatic_retries}
+
       code, response_headers, response_body = request_http(@url, options)
 
     rescue => e
@@ -121,6 +123,9 @@ class LogStash::Filters::Age < LogStash::Filters::Base
                     :url => @url, :code => code,
                     :response => response_body)
     else
+      @logger.info('age request response',
+                    :url => @url, :code => code,
+                    :response => response_body)
       process_response(response_body)
     end
   end
