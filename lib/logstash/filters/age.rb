@@ -153,13 +153,13 @@ class LogStash::Filters::Age < LogStash::Filters::Base
       end
 
       if parsed
-        if parsed.is_a? Numeric
-          @age_limit = parsed.to_f
-          @logger.info('age response parsed numeric',
-            :age_limit => @age_limit, :parsed => parsed)
-        else
+        @age_limit = parsed.to_f
+        if @age_limit <= 0
           @age_limit = @max_age_secs.to_f
           @logger.info('age response parsed non numeric',
+            :age_limit => @age_limit, :parsed => parsed)
+        else
+          @logger.info('age response parsed numeric',
             :age_limit => @age_limit, :parsed => parsed)
         end
       else
