@@ -48,7 +48,7 @@ filter {
 [source,ruby]
 filter {
   age{
-    "url" => "https://elasticsearch.main.dev.top.rd.elliemae.io/_cluster/settings?filter_path=persistent.cluster.metadata.logstash.filter.age.limit_secs"
+    "url" => "https://foo.com/_cluster/settings?filter_path=persistent.cluster.metadata.logstash.filter.age.limit_secs"
     "limit_path" => "persistent.cluster.metadata.logstash.filter.age.limit_secs"
     "interval" => "5m"
     "expired_target" => "[@metadata][expired]"
