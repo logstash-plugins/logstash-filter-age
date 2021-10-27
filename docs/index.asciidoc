@@ -27,14 +27,14 @@ from the current timestamp. This allows you to drop Logstash events that are
 older than some threshold.
 
 [source,ruby]
+-----
 filter {
   age {}
-
   if [@metadata][age] > 86400 {
     drop {}
   }
 }
-
+-----
 
 [id="plugins-{type}s-{plugin}-options"]
 ==== Age Filter Configuration Options
